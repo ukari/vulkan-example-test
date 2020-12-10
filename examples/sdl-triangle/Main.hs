@@ -26,7 +26,7 @@ import           Data.Text.Encoding
 import           Data.Traversable
 import qualified Data.Vector                   as V
 import           Data.Word
-import           Foreign.Ptr                    ( castPtr )
+import           Foreign.Ptr                    ( castPtr, Ptr, WordPtr (..), wordPtrToPtr)
 import qualified SDL
 import qualified SDL.Video.Vulkan              as SDL
 import           Say
@@ -40,37 +40,53 @@ import           Vulkan.Extensions.VK_KHR_swapchain
 import           Vulkan.Utils.Debug
 import           Vulkan.Utils.ShaderQQ
 import           Vulkan.Zero
+import qualified Graphics.X11.Xlib as Xlib
+import           Vulkan.Extensions.VK_KHR_xlib_surface
+import           SDL.Raw.Video
+import qualified SDL.Internal.Types as SDL 
 
 main :: IO ()
-main = runManaged $ do
-  withSDL
+main = do
+  display <- Xlib.openDisplay ""
+  window <- Xlib.rootWindow display 0
+  runManaged $ do
+  
+    withSDL
 
-  VulkanWindow {..} <- withVulkanWindow appName windowWidth windowHeight
-  renderPass        <- Main.createRenderPass vwDevice vwFormat
-  graphicsPipeline  <- createGraphicsPipeline vwDevice
-                                              renderPass
-                                              vwExtent
-                                              vwFormat
-  framebuffers   <- createFramebuffers vwDevice vwImageViews renderPass vwExtent
-  commandBuffers <- createCommandBuffers vwDevice
-                                         renderPass
-                                         graphicsPipeline
-                                         vwGraphicsQueueFamilyIndex
-                                         framebuffers
-                                         vwExtent
-  (imageAvailableSemaphore, renderFinishedSemaphore) <- createSemaphores
-    vwDevice
-  SDL.showWindow vwSdlWindow
-  liftIO
-    $ mainLoop
-    $ drawFrame vwDevice
-                vwSwapchain
-                vwGraphicsQueue
-                vwPresentQueue
-                imageAvailableSemaphore
-                renderFinishedSemaphore
-                commandBuffers
-  deviceWaitIdle vwDevice
+    VulkanWindow {..} <- withVulkanWindow appName windowWidth windowHeight window
+    renderPass        <- Main.createRenderPass vwDevice vwFormat
+    graphicsPipeline  <- createGraphicsPipeline vwDevice
+                                                renderPass
+                                                vwExtent
+                                                vwFormat
+    framebuffers   <- createFramebuffers vwDevice vwImageViews renderPass vwExtent
+    commandBuffers <- createCommandBuffers vwDevice
+                                           renderPass
+                                           graphicsPipeline
+                                           vwGraphicsQueueFamilyIndex
+                                           framebuffers
+                                           vwExtent
+    (imageAvailableSemaphore, renderFinishedSemaphore) <- createSemaphores
+      vwDevice
+    SDL.showWindow vwSdlWindow
+    liftIO
+      $ mainLoop
+      $ drawFrame vwDevice
+                  vwSwapchain
+                  vwGraphicsQueue
+                  vwPresentQueue
+                  imageAvailableSemaphore
+                  renderFinishedSemaphore
+                  commandBuffers
+    deviceWaitIdle vwDevice
+
+castDisplay :: Xlib.Display -> Ptr Display
+castDisplay (Xlib.Display dpy) = castPtr dpy
+
+castWindow :: Xlib.Window -> IO SDL.Window
+castWindow win = do
+  window <- createWindowFrom $wordPtrToPtr $ WordPtr$fromIntegral win
+  pure $ SDL.Window window
 
 mainLoop :: IO () -> IO ()
 mainLoop draw = whileM $ do
@@ -356,9 +372,9 @@ data VulkanWindow = VulkanWindow
   , vwPresentQueue             :: Queue
   }
 
-withVulkanWindow :: Text -> Int -> Int -> Managed VulkanWindow
-withVulkanWindow appName width height = do
-  window             <- withWindow appName width height
+withVulkanWindow :: Text -> Int -> Int -> Window -> Managed VulkanWindow
+withVulkanWindow appName width height win = do
+  window             <- withWindow win
   instanceCreateInfo <- windowInstanceCreateInfo window
   inst               <- withInstance instanceCreateInfo Nothing allocate
   _                  <- withDebugUtilsMessengerEXT inst
@@ -370,6 +386,7 @@ withVulkanWindow appName width height = do
                              DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT
                              zero { message = "Debug Message Test" }
   surface <- withSDLWindowSurface inst window
+  --surface <- createXlibSurfaceKHR inst zero { dpy = display, window = window } Nothing
   (dev, graphicsQueue, graphicsQueueFamilyIndex, presentQueue, swapchainFormat, swapchainExtent, swapchain) <-
     createGraphicalDevice inst surface
   (_, images) <- getSwapchainImagesKHR dev swapchain
@@ -655,18 +672,10 @@ withSDL =
     . bracket_ (SDL.vkLoadLibrary Nothing) SDL.vkUnloadLibrary
 
 -- | Create an SDL window and use it
-withWindow :: Text -> Int -> Int -> Managed SDL.Window
-withWindow title width height = managed $ bracket
-  (SDL.createWindow
-    title
-    (SDL.defaultWindow
-      { SDL.windowInitialSize     = SDL.V2 (fromIntegral width)
-                                           (fromIntegral height)
-      , SDL.windowGraphicsContext = SDL.VulkanContext
-      }
-    )
-  )
-  SDL.destroyWindow
+withWindow :: Xlib.Window -> Managed SDL.Window
+withWindow win = do
+  window <- return $ castWindow win
+  managed $ bracket (window) SDL.destroyWindow
 
 isQuitEvent :: SDL.Event -> Bool
 isQuitEvent = \case

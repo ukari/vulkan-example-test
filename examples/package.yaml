@@ -58,7 +58,7 @@ executables:
     - vector
     - vulkan
     - vulkan-utils
-
+    - X11
   offscreen:
     main: Main.hs
     source-dirs: offscreen
@@ -211,14 +211,14 @@ flags:
   have-shaderc:
     description: Set this flag if you have shaderc (and the glslc executable) installed.
       It enables building the examples which use HLSL shaders.
-    default: yes
-    manual: yes
+    default: no
+    manual: no
   raytracing:
     description: Set this flag if you have a version of glslValidator recent enough
       to compile ray tracing shaders. It enables building the examples which use ray
       tracing.
-    default: yes
-    manual: yes
+    default: no
+    manual: no
 
 default-extensions:
 - DataKinds
