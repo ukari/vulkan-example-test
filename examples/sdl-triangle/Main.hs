@@ -53,7 +53,7 @@ main = do
   
     withSDL
 
-    VulkanWindow {..} <- withVulkanWindow appName windowWidth windowHeight window
+    VulkanWindow {..} <- withVulkanWindow appName windowWidth windowHeight window (castDisplay display)
     renderPass        <- Main.createRenderPass vwDevice vwFormat
     graphicsPipeline  <- createGraphicsPipeline vwDevice
                                                 renderPass
@@ -372,8 +372,8 @@ data VulkanWindow = VulkanWindow
   , vwPresentQueue             :: Queue
   }
 
-withVulkanWindow :: Text -> Int -> Int -> Window -> Managed VulkanWindow
-withVulkanWindow appName width height win = do
+withVulkanWindow :: Text -> Int -> Int -> Window -> Ptr Display -> Managed VulkanWindow
+withVulkanWindow appName width height win display = do
   window             <- withWindow win
   instanceCreateInfo <- windowInstanceCreateInfo window
   inst               <- withInstance instanceCreateInfo Nothing allocate
@@ -385,8 +385,8 @@ withVulkanWindow appName width height win = do
                              DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT
                              DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT
                              zero { message = "Debug Message Test" }
-  surface <- withSDLWindowSurface inst window
-  --surface <- createXlibSurfaceKHR inst zero { dpy = display, window = window } Nothing
+  --surface <- withSDLWindowSurface inst window
+  surface <- createXlibSurfaceKHR inst zero { dpy = display, window = win } Nothing
   (dev, graphicsQueue, graphicsQueueFamilyIndex, presentQueue, swapchainFormat, swapchainExtent, swapchain) <-
     createGraphicalDevice inst surface
   (_, images) <- getSwapchainImagesKHR dev swapchain
